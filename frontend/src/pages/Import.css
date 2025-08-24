@@ -1,0 +1,311 @@
+.import {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.import-header {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.import-header h1 {
+  margin-bottom: 0.5rem;
+}
+
+.import-header p {
+  color: #7f8c8d;
+  font-size: 1.1rem;
+}
+
+/* Upload Step */
+.upload-step {
+  background: white;
+  border-radius: 16px;
+  padding: 2rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  text-align: center;
+}
+
+.upload-info {
+  margin-bottom: 2rem;
+}
+
+.upload-info h3 {
+  margin-bottom: 1rem;
+  color: #2c3e50;
+}
+
+.upload-info p {
+  color: #7f8c8d;
+  margin-bottom: 1.5rem;
+}
+
+.sample-section {
+  background: #f8f9fa;
+  padding: 1.5rem;
+  border-radius: 12px;
+  margin-bottom: 2rem;
+}
+
+.sample-section p {
+  margin-bottom: 1rem;
+  color: #495057;
+}
+
+/* Dropzone */
+.dropzone {
+  border: 3px dashed #e1e8ed;
+  border-radius: 16px;
+  padding: 3rem 2rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  background: #fafbfc;
+}
+
+.dropzone:hover {
+  border-color: #3498db;
+  background: #f0f8ff;
+}
+
+.dropzone.active {
+  border-color: #3498db;
+  background: #ebf3fd;
+}
+
+.dropzone-content {
+  text-align: center;
+}
+
+.dropzone-icon {
+  font-size: 4rem;
+  margin-bottom: 1rem;
+  color: #7f8c8d;
+}
+
+.dropzone p {
+  font-size: 1.1rem;
+  color: #7f8c8d;
+  margin: 0;
+}
+
+/* Mapping Step */
+.mapping-step {
+  background: white;
+  border-radius: 16px;
+  padding: 2rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.mapping-step h3 {
+  margin-bottom: 0.5rem;
+  color: #2c3e50;
+}
+
+.mapping-step p {
+  color: #7f8c8d;
+  margin-bottom: 2rem;
+}
+
+.mapping-grid {
+  display: grid;
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.mapping-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  align-items: start;
+  padding: 1rem;
+  background: #f8f9fa;
+  border-radius: 8px;
+}
+
+.field-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.field-label {
+  font-weight: 600;
+  color: #2c3e50;
+  margin-bottom: 0.25rem;
+}
+
+.required {
+  color: #e74c3c;
+  margin-left: 0.25rem;
+}
+
+.field-description {
+  font-size: 0.85rem;
+  color: #7f8c8d;
+  line-height: 1.4;
+}
+
+.mapping-select {
+  width: 100%;
+  padding: 0.75rem;
+  border: 2px solid #e1e8ed;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  background-color: white;
+}
+
+.mapping-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+/* Preview Step */
+.preview-step {
+  background: white;
+  border-radius: 16px;
+  padding: 2rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.preview-step h3 {
+  margin-bottom: 0.5rem;
+  color: #2c3e50;
+}
+
+.preview-step p {
+  color: #7f8c8d;
+  margin-bottom: 2rem;
+}
+
+.preview-table {
+  overflow-x: auto;
+  margin-bottom: 2rem;
+  border-radius: 8px;
+  border: 1px solid #e1e8ed;
+}
+
+.preview-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.preview-table th {
+  background: #f8f9fa;
+  padding: 0.75rem;
+  text-align: left;
+  font-weight: 600;
+  color: #2c3e50;
+  border-bottom: 1px solid #e1e8ed;
+}
+
+.preview-table td {
+  padding: 0.75rem;
+  border-bottom: 1px solid #f1f3f4;
+}
+
+.preview-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.preview-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+/* Import Step */
+.import-step {
+  background: white;
+  border-radius: 16px;
+  padding: 2rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  text-align: center;
+}
+
+.success-message {
+  margin-bottom: 2rem;
+}
+
+.success-icon {
+  font-size: 4rem;
+  margin-bottom: 1rem;
+}
+
+.success-message h3 {
+  color: #27ae60;
+  margin-bottom: 0.5rem;
+}
+
+.success-message p {
+  color: #7f8c8d;
+  font-size: 1.1rem;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .import {
+    padding: 0 1rem;
+  }
+
+  .upload-step,
+  .mapping-step,
+  .preview-step,
+  .import-step {
+    padding: 1.5rem;
+  }
+
+  .dropzone {
+    padding: 2rem 1rem;
+  }
+
+  .dropzone-icon {
+    font-size: 3rem;
+  }
+
+  .mapping-row {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+
+  .mapping-actions,
+  .preview-actions {
+    flex-direction: column;
+  }
+
+  .preview-table {
+    font-size: 0.8rem;
+  }
+
+  .preview-table th,
+  .preview-table td {
+    padding: 0.5rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .import {
+    padding: 0;
+  }
+
+  .upload-step,
+  .mapping-step,
+  .preview-step,
+  .import-step {
+    border-radius: 0;
+    margin: 0 0 1rem 0;
+  }
+
+  .dropzone {
+    border-radius: 0;
+    padding: 1.5rem 1rem;
+  }
+
+  .mapping-row {
+    padding: 0.75rem;
+  }
+
+  .success-icon {
+    font-size: 3rem;
+  }
+}
