@@ -4,7 +4,6 @@ import './App.css';
 import Navbar from './components/Navbar';
 import Dashboard from './pages/Dashboard';
 import Trades from './pages/Trades';
-import Import from './pages/Import';
 import Settings from './pages/Settings';
 import { AppProvider } from './context/AppContext';
 
@@ -18,7 +17,6 @@ function App() {
             <Routes>
               <Route path="/" element={<Dashboard />} />
               <Route path="/trades" element={<Trades />} />
-              <Route path="/import" element={<Import />} />
               <Route path="/settings" element={<Settings />} />
             </Routes>
           </main>

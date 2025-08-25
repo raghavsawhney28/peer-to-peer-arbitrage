@@ -1,97 +1,77 @@
 const mongoose = require('mongoose');
 
 const tradeSchema = new mongoose.Schema({
-  orderId: {
+  type: {
     type: String,
-    required: true,
-    unique: true,
-    index: true
-  },
-  side: {
-    type: String,
-    required: true,
     enum: ['BUY', 'SELL'],
-    index: true
-  },
-  asset: {
-    type: String,
-    default: 'USDT',
     required: true
+  },
+  timestamp: {
+    type: Date,
+    required: true,
+    default: Date.now
   },
   fiatCurrency: {
     type: String,
+    default: 'INR',
+    required: true
+  },
+  fiatAmount: {
+    type: Number,
     required: true,
-    index: true
+    min: 0
   },
   price: {
     type: Number,
     required: true,
     min: 0
   },
-  amount: {
+  cryptoAmount: {
     type: Number,
     required: true,
     min: 0
   },
-  totalFiat: {
-    type: Number,
-    required: true,
-    min: 0
-  },
-  feeFiat: {
-    type: Number,
-    default: 0,
-    min: 0
-  },
-  paymentMethod: {
+  cryptoCurrency: {
     type: String,
-    default: ''
+    default: 'USDT',
+    required: true
   },
-  counterparty: {
+  notes: {
     type: String,
     default: ''
   },
   status: {
     type: String,
-    required: true,
-    enum: ['COMPLETED', 'CANCELED', 'PENDING', 'FAILED'],
-    default: 'COMPLETED',
-    index: true
-  },
-  createdAt: {
-    type: Date,
-    required: true,
-    index: true
-  },
-  completedAt: {
-    type: Date,
-    required: true,
-    index: true
-  },
-  raw: {
-    type: mongoose.Schema.Types.Mixed,
-    default: {}
+    enum: ['COMPLETED', 'PENDING', 'CANCELLED'],
+    default: 'COMPLETED'
   }
 }, {
   timestamps: true
 });
 
-// Compound indexes for efficient queries
-tradeSchema.index({ side: 1, status: 1, completedAt: 1 });
-tradeSchema.index({ fiatCurrency: 1, side: 1, completedAt: 1 });
-tradeSchema.index({ asset: 1, side: 1, completedAt: 1 });
+// Index for efficient queries
+tradeSchema.index({ type: 1, timestamp: 1 });
+tradeSchema.index({ fiatCurrency: 1, timestamp: 1 });
+tradeSchema.index({ status: 1 });
 
-// Virtual for net amount (amount - fees)
-tradeSchema.virtual('netAmount').get(function() {
-  return this.amount;
+// Virtual field for total value
+tradeSchema.virtual('totalValue').get(function() {
+  return this.fiatAmount;
 });
 
-// Virtual for net fiat value
-tradeSchema.virtual('netFiat').get(function() {
-  return this.totalFiat - this.feeFiat;
+// Virtual field for formatted timestamp
+tradeSchema.virtual('formattedTimestamp').get(function() {
+  return this.timestamp.toLocaleString('en-IN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  });
 });
 
-// Ensure virtuals are serialized
+// Ensure virtual fields are serialized
 tradeSchema.set('toJSON', { virtuals: true });
 tradeSchema.set('toObject', { virtuals: true });
 

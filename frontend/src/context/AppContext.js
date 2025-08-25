@@ -1,25 +1,68 @@
-import React, { createContext, useContext, useReducer, useEffect } from 'react';
+import React, { createContext, useContext, useReducer, useEffect, useState, useCallback, useMemo } from 'react';
 import axios from 'axios';
+import { API_CONFIG, DEBUG_CONFIG } from '../config';
+
+// Configure axios base URL
+axios.defaults.baseURL = API_CONFIG.BASE_URL;
+axios.defaults.timeout = API_CONFIG.TIMEOUT;
+
+// Add request interceptor for logging
+if (DEBUG_CONFIG.LOG_API_CALLS) {
+  axios.interceptors.request.use(
+    (config) => {
+      console.log(`🚀 API Request: ${config.method?.toUpperCase()} ${config.url}`, {
+        baseURL: config.baseURL,
+        params: config.params,
+        data: config.data
+      });
+      return config;
+    },
+    (error) => {
+      console.error('❌ API Request Error:', error);
+      return Promise.reject(error);
+    }
+  );
+}
+
+// Add response interceptor for logging
+if (DEBUG_CONFIG.LOG_API_RESPONSES) {
+  axios.interceptors.response.use(
+    (response) => {
+      console.log(`✅ API Response: ${response.config.method?.toUpperCase()} ${response.config.url}`, {
+        status: response.status,
+        data: response.data
+      });
+      return response;
+    },
+    (error) => {
+      if (DEBUG_CONFIG.LOG_ERRORS) {
+        console.error('❌ API Response Error:', {
+          url: error.config?.url,
+          method: error.config?.method,
+          status: error.response?.status,
+          data: error.response?.data,
+          message: error.message
+        });
+      }
+      return Promise.reject(error);
+    }
+  );
+}
 
 const AppContext = createContext();
 
 const initialState = {
   settings: {
-    pnlMethod: 'FIFO',
-    defaultFiatCurrency: 'INR',
-    dateRange: {
-      from: null,
-      to: null
-    }
+    fiatCurrency: 'INR',
+    profitCalculationMethod: 'FIFO',
+    dateFormat: 'DD/MM/YYYY',
+    timeFormat: '24h',
+    theme: 'dark'
   },
   summary: null,
   trades: [],
   loading: false,
-  error: null,
-  mexcStatus: {
-    hasCredentials: false,
-    connected: false
-  }
+  error: null
 };
 
 const appReducer = (state, action) => {
@@ -39,6 +82,16 @@ const appReducer = (state, action) => {
         ...state,
         trades: action.payload
       };
+    case 'ADD_TRADE':
+      return {
+        ...state,
+        trades: [action.payload, ...state.trades]
+      };
+    case 'REMOVE_TRADE':
+      return {
+        ...state,
+        trades: state.trades.filter(trade => trade._id !== action.payload)
+      };
     case 'SET_LOADING':
       return {
         ...state,
@@ -49,16 +102,6 @@ const appReducer = (state, action) => {
         ...state,
         error: action.payload
       };
-    case 'SET_MEXC_STATUS':
-      return {
-        ...state,
-        mexcStatus: { ...state.mexcStatus, ...action.payload }
-      };
-    case 'CLEAR_ERROR':
-      return {
-        ...state,
-        error: null
-      };
     default:
       return state;
   }
@@ -66,6 +109,7 @@ const appReducer = (state, action) => {
 
 export const AppProvider = ({ children }) => {
   const [state, dispatch] = useReducer(appReducer, initialState);
+  const [isInitialized, setIsInitialized] = useState(false);
 
   // Load settings from localStorage on mount
   useEffect(() => {
@@ -78,121 +122,82 @@ export const AppProvider = ({ children }) => {
         console.error('Error loading settings:', error);
       }
     }
+    setIsInitialized(true);
   }, []);
 
   // Save settings to localStorage when they change
   useEffect(() => {
-    localStorage.setItem('p2pSettings', JSON.stringify(state.settings));
-  }, [state.settings]);
+    if (isInitialized) {
+      localStorage.setItem('p2pSettings', JSON.stringify(state.settings));
+    }
+  }, [state.settings, isInitialized]);
 
-  // Check MEXC API status on mount
-  useEffect(() => {
-    checkMEXCStatus();
+  // Update settings
+  const updateSettings = useCallback((newSettings) => {
+    dispatch({ type: 'SET_SETTINGS', payload: newSettings });
   }, []);
 
-  const checkMEXCStatus = async () => {
+  // Fetch summary data
+  const fetchSummary = useCallback(async (fiatCurrency = 'INR', method = 'FIFO') => {
+    dispatch({ type: 'SET_LOADING', payload: true });
+    dispatch({ type: 'SET_ERROR', payload: null });
+
     try {
-      const response = await axios.get('/api/mexc/status');
-      dispatch({ 
-        type: 'SET_MEXC_STATUS', 
-        payload: { 
-          hasCredentials: response.data.hasCredentials,
-          connected: response.data.hasCredentials 
-        } 
-      });
+      const response = await fetch(`http://localhost:5000/api/summary?fiatCurrency=${fiatCurrency}&method=${method}`);
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.message || 'Failed to fetch summary');
+      }
+
+      dispatch({ type: 'SET_SUMMARY', payload: result.data });
     } catch (error) {
-      dispatch({ 
-        type: 'SET_MEXC_STATUS', 
-        payload: { 
-          hasCredentials: false,
-          connected: false 
-        } 
-      });
-    }
-  };
-
-  const updateSettings = (newSettings) => {
-    dispatch({ type: 'SET_SETTINGS', payload: newSettings });
-  };
-
-  const fetchSummary = async (params = {}) => {
-    try {
-      dispatch({ type: 'SET_LOADING', payload: true });
-      dispatch({ type: 'CLEAR_ERROR' });
-
-      const queryParams = new URLSearchParams({
-        fiatCurrency: state.settings.defaultFiatCurrency,
-        method: state.settings.pnlMethod,
-        ...params
-      });
-
-      const response = await axios.get(`/api/summary?${queryParams}`);
-      dispatch({ type: 'SET_SUMMARY', payload: response.data.data });
-    } catch (error) {
-      dispatch({ 
-        type: 'SET_ERROR', 
-        payload: error.response?.data?.message || error.message 
-      });
+      dispatch({ type: 'SET_ERROR', payload: error.message });
     } finally {
       dispatch({ type: 'SET_LOADING', payload: false });
     }
-  };
+  }, []);
 
-  const fetchTrades = async (params = {}) => {
+  // Fetch trades
+  const fetchTrades = useCallback(async (filters = {}) => {
+    dispatch({ type: 'SET_LOADING', payload: true });
+    dispatch({ type: 'SET_ERROR', payload: null });
+
     try {
-      dispatch({ type: 'SET_LOADING', payload: true });
-      dispatch({ type: 'CLEAR_ERROR' });
+      const queryParams = new URLSearchParams(filters);
+      const response = await fetch(`http://localhost:5000/api/trades?${queryParams}`);
+      const result = await response.json();
 
-      const queryParams = new URLSearchParams({
-        pageSize: 100,
-        sortBy: 'completedAt',
-        sortOrder: 'desc',
-        ...params
-      });
+      if (!response.ok) {
+        throw new Error(result.message || 'Failed to fetch trades');
+      }
 
-      const response = await axios.get(`/api/trades?${queryParams}`);
-      dispatch({ type: 'SET_TRADES', payload: response.data.data });
+      dispatch({ type: 'SET_TRADES', payload: result.data });
     } catch (error) {
-      dispatch({ 
-        type: 'SET_ERROR', 
-        payload: error.response?.data?.message || error.message 
-      });
+      dispatch({ type: 'SET_ERROR', payload: error.message });
     } finally {
       dispatch({ type: 'SET_LOADING', payload: false });
     }
-  };
+  }, []);
 
-  const syncMEXC = async () => {
-    try {
-      dispatch({ type: 'SET_LOADING', payload: true });
-      dispatch({ type: 'CLEAR_ERROR' });
+  // Add trade
+  const addTrade = useCallback((trade) => {
+    dispatch({ type: 'ADD_TRADE', payload: trade });
+  }, []);
 
-      const response = await axios.post('/api/mexc/sync');
-      
-      // Refresh data after sync
-      await fetchSummary();
-      await fetchTrades();
-      
-      return response.data;
-    } catch (error) {
-      dispatch({ 
-        type: 'SET_ERROR', 
-        payload: error.response?.data?.message || error.message 
-      });
-      throw error;
-    } finally {
-      dispatch({ type: 'SET_LOADING', payload: false });
-    }
-  };
+  // Remove trade
+  const removeTrade = useCallback((tradeId) => {
+    dispatch({ type: 'REMOVE_TRADE', payload: tradeId });
+  }, []);
 
-  const value = {
+  const value = useMemo(() => ({
     ...state,
     updateSettings,
     fetchSummary,
     fetchTrades,
-    syncMEXC,
-    checkMEXCStatus
-  };
+    addTrade,
+    removeTrade
+  }), [state, updateSettings, fetchSummary, fetchTrades, addTrade, removeTrade]);
 
   return (
     <AppContext.Provider value={value}>

@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const profitCalculator = require('../services/profitCalculator');
+const ProfitCalculator = require('../services/profitCalculator');
 
 // Get profit time series data
 router.get('/timeseries', async (req, res) => {
@@ -9,40 +9,33 @@ router.get('/timeseries', async (req, res) => {
       fiatCurrency = 'INR', 
       method = 'FIFO',
       from,
-      to,
-      interval = 'daily' // daily, weekly, monthly
+      to 
     } = req.query;
 
-    // Set profit calculation method
+    if (!from || !to) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Both from and to dates are required' 
+      });
+    }
+
+    // Create profit calculator instance
+    const profitCalculator = new ProfitCalculator();
     profitCalculator.setMethod(method.toUpperCase());
 
-    // Get time series data
-    const timeSeriesData = await profitCalculator.getProfitTimeSeries(
+    // Get profit time series
+    const timeSeries = await profitCalculator.getProfitTimeSeries(
       fiatCurrency,
       from,
       to
     );
 
-    // Process data based on interval
-    let processedData = timeSeriesData;
-    
-    if (interval === 'weekly') {
-      processedData = this.aggregateToWeekly(timeSeriesData);
-    } else if (interval === 'monthly') {
-      processedData = this.aggregateToMonthly(timeSeriesData);
-    }
-
     res.json({
       success: true,
-      data: {
-        timeSeries: processedData,
-        interval,
-        fiatCurrency,
-        method: method.toUpperCase()
-      }
+      data: timeSeries
     });
   } catch (error) {
-    console.error('P&L time series error:', error);
+    console.error('Time series calculation error:', error);
     res.status(500).json({ 
       success: false, 
       message: error.message 
@@ -50,7 +43,7 @@ router.get('/timeseries', async (req, res) => {
   }
 });
 
-// Get profit breakdown by day
+// Get daily profit data
 router.get('/daily', async (req, res) => {
   try {
     const { 
@@ -60,22 +53,51 @@ router.get('/daily', async (req, res) => {
       to 
     } = req.query;
 
-    // Set profit calculation method
+    if (!from || !to) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Both from and to dates are required' 
+      });
+    }
+
+    // Create profit calculator instance
+    const profitCalculator = new ProfitCalculator();
     profitCalculator.setMethod(method.toUpperCase());
 
-    // Get daily profit data
-    const dailyData = await profitCalculator.getProfitTimeSeries(
+    // Get profit time series
+    const timeSeries = await profitCalculator.getProfitTimeSeries(
       fiatCurrency,
       from,
       to
     );
 
+    // Group by date and calculate daily totals
+    const dailyData = {};
+    timeSeries.forEach(entry => {
+      if (!dailyData[entry.date]) {
+        dailyData[entry.date] = {
+          date: entry.date,
+          cumulativeProfit: 0,
+          dailyProfit: 0,
+          inventory: 0,
+          avgCost: 0
+        };
+      }
+      
+      dailyData[entry.date].cumulativeProfit = entry.cumulativeProfit;
+      dailyData[entry.date].dailyProfit = entry.dailyProfit;
+      dailyData[entry.date].inventory = entry.inventory;
+      dailyData[entry.date].avgCost = entry.avgCost;
+    });
+
+    const dailyArray = Object.values(dailyData).sort((a, b) => new Date(a.date) - new Date(b.date));
+
     res.json({
       success: true,
-      data: dailyData
+      data: dailyArray
     });
   } catch (error) {
-    console.error('Daily P&L error:', error);
+    console.error('Daily PNL calculation error:', error);
     res.status(500).json({ 
       success: false, 
       message: error.message 
@@ -83,7 +105,7 @@ router.get('/daily', async (req, res) => {
   }
 });
 
-// Get profit breakdown by week
+// Get weekly profit data
 router.get('/weekly', async (req, res) => {
   try {
     const { 
@@ -93,24 +115,57 @@ router.get('/weekly', async (req, res) => {
       to 
     } = req.query;
 
-    // Set profit calculation method
+    if (!from || !to) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Both from and to dates are required' 
+      });
+    }
+
+    // Create profit calculator instance
+    const profitCalculator = new ProfitCalculator();
     profitCalculator.setMethod(method.toUpperCase());
 
-    // Get daily data and aggregate to weekly
-    const dailyData = await profitCalculator.getProfitTimeSeries(
+    // Get profit time series
+    const timeSeries = await profitCalculator.getProfitTimeSeries(
       fiatCurrency,
       from,
       to
     );
 
-    const weeklyData = aggregateToWeekly(dailyData);
+    // Group by week
+    const weeklyData = {};
+    timeSeries.forEach(entry => {
+      const date = new Date(entry.date);
+      const weekStart = new Date(date);
+      weekStart.setDate(date.getDate() - date.getDay()); // Start of week (Sunday)
+      const weekKey = weekStart.toISOString().split('T')[0];
+      
+      if (!weeklyData[weekKey]) {
+        weeklyData[weekKey] = {
+          weekStart: weekKey,
+          weekEnd: new Date(weekStart.getTime() + 6 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+          cumulativeProfit: 0,
+          weeklyProfit: 0,
+          inventory: 0,
+          avgCost: 0
+        };
+      }
+      
+      weeklyData[weekKey].cumulativeProfit = entry.cumulativeProfit;
+      weeklyData[weekKey].weeklyProfit = entry.dailyProfit;
+      weeklyData[weekKey].inventory = entry.inventory;
+      weeklyData[weekKey].avgCost = entry.avgCost;
+    });
+
+    const weeklyArray = Object.values(weeklyData).sort((a, b) => new Date(a.weekStart) - new Date(b.weekStart));
 
     res.json({
       success: true,
-      data: weeklyData
+      data: weeklyArray
     });
   } catch (error) {
-    console.error('Weekly P&L error:', error);
+    console.error('Weekly PNL calculation error:', error);
     res.status(500).json({ 
       success: false, 
       message: error.message 
@@ -118,7 +173,7 @@ router.get('/weekly', async (req, res) => {
   }
 });
 
-// Get profit breakdown by month
+// Get monthly profit data
 router.get('/monthly', async (req, res) => {
   try {
     const { 
@@ -128,24 +183,55 @@ router.get('/monthly', async (req, res) => {
       to 
     } = req.query;
 
-    // Set profit calculation method
+    if (!from || !to) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Both from and to dates are required' 
+      });
+    }
+
+    // Create profit calculator instance
+    const profitCalculator = new ProfitCalculator();
     profitCalculator.setMethod(method.toUpperCase());
 
-    // Get daily data and aggregate to monthly
-    const dailyData = await profitCalculator.getProfitTimeSeries(
+    // Get profit time series
+    const timeSeries = await profitCalculator.getProfitTimeSeries(
       fiatCurrency,
       from,
       to
     );
 
-    const monthlyData = aggregateToMonthly(dailyData);
+    // Group by month
+    const monthlyData = {};
+    timeSeries.forEach(entry => {
+      const date = new Date(entry.date);
+      const monthKey = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}`;
+      
+      if (!monthlyData[monthKey]) {
+        monthlyData[monthKey] = {
+          month: monthKey,
+          monthName: date.toLocaleString('default', { month: 'long', year: 'numeric' }),
+          cumulativeProfit: 0,
+          monthlyProfit: 0,
+          inventory: 0,
+          avgCost: 0
+        };
+      }
+      
+      monthlyData[monthKey].cumulativeProfit = entry.cumulativeProfit;
+      monthlyData[monthKey].monthlyProfit = entry.dailyProfit;
+      monthlyData[monthKey].inventory = entry.inventory;
+      monthlyData[monthKey].avgCost = entry.avgCost;
+    });
+
+    const monthlyArray = Object.values(monthlyData).sort((a, b) => a.month.localeCompare(b.month));
 
     res.json({
       success: true,
-      data: monthlyData
+      data: monthlyArray
     });
   } catch (error) {
-    console.error('Monthly P&L error:', error);
+    console.error('Monthly PNL calculation error:', error);
     res.status(500).json({ 
       success: false, 
       message: error.message 
@@ -153,75 +239,54 @@ router.get('/monthly', async (req, res) => {
   }
 });
 
-// Helper function to aggregate daily data to weekly
-function aggregateToWeekly(dailyData) {
-  const weeklyData = {};
-  
-  dailyData.forEach(day => {
-    const date = new Date(day.date);
-    const weekStart = getWeekStart(date);
-    const weekKey = weekStart.toISOString().split('T')[0];
-    
-    if (!weeklyData[weekKey]) {
-      weeklyData[weekKey] = {
-        weekStart: weekKey,
-        buyAmount: 0,
-        sellAmount: 0,
-        buyFiat: 0,
-        sellFiat: 0,
-        dailyProfit: 0,
-        cumulativeProfit: 0
-      };
-    }
-    
-    weeklyData[weekKey].buyAmount += day.buyAmount;
-    weeklyData[weekKey].sellAmount += day.sellAmount;
-    weeklyData[weekKey].buyFiat += day.buyFiat;
-    weeklyData[weekKey].sellFiat += day.sellFiat;
-    weeklyData[weekKey].dailyProfit += day.dailyProfit;
-    weeklyData[weekKey].cumulativeProfit = day.cumulativeProfit; // Use last day's cumulative
-  });
-  
-  return Object.values(weeklyData).sort((a, b) => new Date(a.weekStart) - new Date(b.weekStart));
-}
+// Get summary data (alias for daily)
+router.get('/summary', async (req, res) => {
+  try {
+    const { 
+      fiatCurrency = 'INR', 
+      method = 'FIFO',
+      from,
+      to 
+    } = req.query;
 
-// Helper function to aggregate daily data to monthly
-function aggregateToMonthly(dailyData) {
-  const monthlyData = {};
-  
-  dailyData.forEach(day => {
-    const date = new Date(day.date);
-    const monthKey = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}`;
-    
-    if (!monthlyData[monthKey]) {
-      monthlyData[monthKey] = {
-        month: monthKey,
-        buyAmount: 0,
-        sellAmount: 0,
-        buyFiat: 0,
-        sellFiat: 0,
-        dailyProfit: 0,
-        cumulativeProfit: 0
-      };
+    if (!from || !to) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Both from and to dates are required' 
+      });
     }
-    
-    monthlyData[monthKey].buyAmount += day.buyAmount;
-    monthlyData[monthKey].sellAmount += day.sellAmount;
-    monthlyData[monthKey].buyFiat += day.buyFiat;
-    monthlyData[monthKey].sellFiat += day.sellFiat;
-    monthlyData[monthKey].dailyProfit += day.dailyProfit;
-    monthlyData[monthKey].cumulativeProfit = day.cumulativeProfit; // Use last day's cumulative
-  });
-  
-  return Object.values(monthlyData).sort((a, b) => a.month.localeCompare(b.month));
-}
 
-// Helper function to get week start (Monday)
-function getWeekStart(date) {
-  const d = new Date(date);
-  const day = d.getDay();
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Adjust when day is Sunday
-  return new Date(d.setDate(diff));
-}
+    // Create profit calculator instance
+    const profitCalculator = new ProfitCalculator();
+    profitCalculator.setMethod(method.toUpperCase());
+
+    // Get profit time series
+    const timeSeries = await profitCalculator.getProfitTimeSeries(
+      fiatCurrency,
+      from,
+      to
+    );
+
+    // Return the last entry as summary
+    const summary = timeSeries.length > 0 ? timeSeries[timeSeries.length - 1] : {
+      date: from,
+      cumulativeProfit: 0,
+      dailyProfit: 0,
+      inventory: 0,
+      avgCost: 0
+    };
+
+    res.json({
+      success: true,
+      data: summary
+    });
+  } catch (error) {
+    console.error('Summary PNL calculation error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: error.message 
+    });
+  }
+});
 
 module.exports = router;

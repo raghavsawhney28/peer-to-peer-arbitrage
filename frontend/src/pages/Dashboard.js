@@ -1,79 +1,107 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart } from 'recharts';
-import dayjs from 'dayjs';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { useNavigate } from 'react-router-dom';
 import './Dashboard.css';
 
 const Dashboard = () => {
-  const { 
-    summary, 
-    loading, 
-    error, 
-    fetchSummary, 
-    fetchTrades, 
-    syncMEXC,
-    settings 
+  const {
+    summary,
+    loading,
+    error,
+    fetchSummary,
+    settings
   } = useApp();
 
-  const [dateRange, setDateRange] = useState({
-    from: dayjs().subtract(30, 'days').format('YYYY-MM-DD'),
-    to: dayjs().format('YYYY-MM-DD')
-  });
-
+  const navigate = useNavigate();
+  const [dateRange, setDateRange] = useState('7d');
   const [timeSeriesData, setTimeSeriesData] = useState([]);
 
-  useEffect(() => {
-    loadDashboardData();
-  }, [dateRange, settings.pnlMethod, settings.defaultFiatCurrency]);
-
-  const loadDashboardData = async () => {
-    await Promise.all([
-      fetchSummary({ from: dateRange.from, to: dateRange.to }),
-      fetchTrades({ from: dateRange.from, to: dateRange.to }),
-      loadTimeSeriesData()
-    ]);
-  };
-
-  const loadTimeSeriesData = async () => {
+  // Load dashboard data
+  const loadDashboardData = useCallback(async () => {
     try {
-      const response = await fetch(`/api/pnl/timeseries?from=${dateRange.from}&to=${dateRange.to}&fiatCurrency=${settings.defaultFiatCurrency}&method=${settings.pnlMethod}`);
-      const data = await response.json();
-      if (data.success) {
-        setTimeSeriesData(data.data.timeSeries);
+      await fetchSummary(settings.fiatCurrency || 'INR', settings.profitCalculationMethod || 'FIFO');
+    } catch (error) {
+      console.error('Failed to load dashboard data:', error);
+    }
+  }, [fetchSummary, settings.fiatCurrency, settings.profitCalculationMethod]);
+
+  // Load time series data
+  const loadTimeSeriesData = useCallback(async () => {
+    try {
+      const from = new Date();
+      const to = new Date();
+      
+      switch (dateRange) {
+        case '7d':
+          from.setDate(from.getDate() - 7);
+          break;
+        case '30d':
+          from.setDate(from.getDate() - 30);
+          break;
+        case '90d':
+          from.setDate(from.getDate() - 90);
+          break;
+        default:
+          from.setDate(from.getDate() - 7);
+      }
+
+      const response = await fetch(`http://localhost:5000/api/pnl/timeseries?from=${from.toISOString().split('T')[0]}&to=${to.toISOString().split('T')[0]}&fiatCurrency=${settings.fiatCurrency || 'INR'}&method=${settings.profitCalculationMethod || 'FIFO'}`);
+      const result = await response.json();
+
+      if (response.ok) {
+        setTimeSeriesData(result.data);
       }
     } catch (error) {
-      console.error('Error loading time series data:', error);
+      console.error('Failed to load time series data:', error);
     }
-  };
+  }, [dateRange, settings.fiatCurrency, settings.profitCalculationMethod]);
 
-  const handleDateRangeChange = (field, value) => {
-    setDateRange(prev => ({ ...prev, [field]: value }));
-  };
+  // Load data on component mount
+  useEffect(() => {
+    loadDashboardData();
+  }, [loadDashboardData]);
 
-  const handleSyncMEXC = async () => {
-    try {
-      await syncMEXC();
-      // Data will be refreshed automatically
-    } catch (error) {
-      console.error('MEXC sync failed:', error);
-    }
-  };
+  // Load time series data when date range changes
+  useEffect(() => {
+    loadTimeSeriesData();
+  }, [loadTimeSeriesData]);
 
-  const formatCurrency = (amount, currency = 'INR') => {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: currency,
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 2
-    }).format(amount);
-  };
+  // Handle date range change
+  const handleDateRangeChange = useCallback((newRange) => {
+    setDateRange(newRange);
+  }, []);
 
-  const formatNumber = (num) => {
-    return new Intl.NumberFormat('en-IN', {
+  // Format currency
+  const formatCurrency = useCallback((amount, currency = 'INR') => {
+    const symbols = { INR: '₹', USD: '$', EUR: '€', GBP: '£' };
+    const symbol = symbols[currency] || currency;
+    return `${symbol}${parseFloat(amount || 0).toLocaleString('en-IN', {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2
-    }).format(num);
-  };
+    })}`;
+  }, []);
+
+  // Format number
+  const formatNumber = useCallback((number, decimals = 2) => {
+    return parseFloat(number || 0).toLocaleString('en-IN', {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals
+    });
+  }, []);
+
+  // Chart data
+  const chartData = useMemo(() => {
+    return timeSeriesData.map(item => ({
+      date: new Date(item.date).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' }),
+      cumulativeProfit: item.cumulativeProfit || 0
+    }));
+  }, [timeSeriesData]);
+
+  // Navigate to trades page
+  const handleAddTrade = useCallback(() => {
+    navigate('/trades');
+  }, [navigate]);
 
   if (loading && !summary) {
     return (
@@ -87,29 +115,7 @@ const Dashboard = () => {
     <div className="dashboard">
       <div className="dashboard-header">
         <h1>Dashboard</h1>
-        <div className="dashboard-actions">
-          <div className="date-range-selector">
-            <label>From:</label>
-            <input
-              type="date"
-              value={dateRange.from}
-              onChange={(e) => handleDateRangeChange('from', e.target.value)}
-            />
-            <label>To:</label>
-            <input
-              type="date"
-              value={dateRange.to}
-              onChange={(e) => handleDateRangeChange('to', e.target.value)}
-            />
-          </div>
-          <button 
-            className="btn btn-primary"
-            onClick={handleSyncMEXC}
-            disabled={loading}
-          >
-            {loading ? 'Syncing...' : 'Sync MEXC'}
-          </button>
-        </div>
+        <p>Track your P2P arbitrage performance</p>
       </div>
 
       {error && (
@@ -118,70 +124,74 @@ const Dashboard = () => {
         </div>
       )}
 
+      {!summary && !loading && (
+        <div className="no-data">
+          <p>No data available. Add your first trade to get started!</p>
+          <button 
+            className="btn btn-primary add-trade-btn"
+            onClick={handleAddTrade}
+          >
+            + Add Trade
+          </button>
+        </div>
+      )}
+
       {summary && (
         <>
-          {/* KPI Cards */}
-          <div className="kpi-grid">
-            <div className="kpi-card profit">
-              <div className="kpi-icon">💰</div>
-              <div className="kpi-content">
-                <h3>Realized Profit</h3>
-                <div className="kpi-value">
-                  {formatCurrency(summary.realizedProfitFiat, summary.fiatCurrency)}
-                </div>
-                <div className="kpi-method">{summary.method}</div>
+          {/* Summary Cards */}
+          <div className="summary-cards">
+            <div className="summary-card profit">
+              <h3>Realized Profit</h3>
+              <div className="card-value">
+                {formatCurrency(summary.realizedProfitFiat, summary.fiatCurrency)}
+              </div>
+              <div className="card-subtitle">
+                {summary.method} Method
               </div>
             </div>
 
-            <div className="kpi-card buys">
-              <div className="kpi-icon">📈</div>
-              <div className="kpi-content">
-                <h3>Total Buys</h3>
-                <div className="kpi-value">
-                  {formatCurrency(summary.totalBuyFiat, summary.fiatCurrency)}
-                </div>
-                <div className="kpi-subtitle">
-                  {formatNumber(summary.totalBuyAmount)} USDT
-                </div>
+            <div className="summary-card buy">
+              <h3>Total Buy</h3>
+              <div className="card-value">
+                {formatCurrency(summary.totalBuyFiat, summary.fiatCurrency)}
+              </div>
+              <div className="card-subtitle">
+                {formatNumber(summary.totalBuyAmount, 6)} {summary.cryptoCurrency || 'USDT'}
               </div>
             </div>
 
-            <div className="kpi-card sells">
-              <div className="kpi-icon">📉</div>
-              <div className="kpi-content">
-                <h3>Total Sells</h3>
-                <div className="kpi-value">
-                  {formatCurrency(summary.totalSellFiat, summary.fiatCurrency)}
-                </div>
-                <div className="kpi-subtitle">
-                  {formatNumber(summary.totalSellAmount)} USDT
-                </div>
+            <div className="summary-card sell">
+              <h3>Total Sell</h3>
+              <div className="card-value">
+                {formatCurrency(summary.totalSellFiat, summary.fiatCurrency)}
+              </div>
+              <div className="card-subtitle">
+                {formatNumber(summary.totalSellAmount, 6)} {summary.cryptoCurrency || 'USDT'}
               </div>
             </div>
 
-            <div className="kpi-card inventory">
-              <div className="kpi-icon">🏪</div>
-              <div className="kpi-content">
-                <h3>Remaining USDT</h3>
-                <div className="kpi-value">
-                  {formatNumber(summary.inventoryRemaining)}
-                </div>
-                <div className="kpi-subtitle">Inventory</div>
+            <div className="summary-card inventory">
+              <h3>Inventory</h3>
+              <div className="card-value">
+                {formatNumber(summary.inventoryRemaining, 6)} {summary.cryptoCurrency || 'USDT'}
+              </div>
+              <div className="card-subtitle">
+                Remaining
               </div>
             </div>
           </div>
 
           {/* Price Averages */}
           <div className="price-averages">
-            <div className="price-card">
-              <h4>Average Buy Price</h4>
-              <div className="price-value">
+            <div className="average-card">
+              <h3>Average Buy Price</h3>
+              <div className="average-value">
                 {formatCurrency(summary.avgBuyPrice, summary.fiatCurrency)}
               </div>
             </div>
-            <div className="price-card">
-              <h4>Average Sell Price</h4>
-              <div className="price-value">
+            <div className="average-card">
+              <h3>Average Sell Price</h3>
+              <div className="average-value">
                 {formatCurrency(summary.avgSellPrice, summary.fiatCurrency)}
               </div>
             </div>
@@ -189,51 +199,65 @@ const Dashboard = () => {
 
           {/* Profit Chart */}
           <div className="chart-section">
-            <h3>Profit Over Time</h3>
+            <div className="chart-header">
+              <h3>Profit Over Time</h3>
+              <div className="date-range-selector">
+                <button
+                  className={`range-btn ${dateRange === '7d' ? 'active' : ''}`}
+                  onClick={() => handleDateRangeChange('7d')}
+                >
+                  7D
+                </button>
+                <button
+                  className={`range-btn ${dateRange === '30d' ? 'active' : ''}`}
+                  onClick={() => handleDateRangeChange('30d')}
+                >
+                  30D
+                </button>
+                <button
+                  className={`range-btn ${dateRange === '90d' ? 'active' : ''}`}
+                  onClick={() => handleDateRangeChange('90d')}
+                >
+                  90D
+                </button>
+              </div>
+            </div>
+            
             <div className="chart-container">
-              <ResponsiveContainer width="100%" height={400}>
-                <AreaChart data={timeSeriesData}>
-                  <CartesianGrid strokeDasharray="3 3" />
+              <ResponsiveContainer width="100%" height={300}>
+                <AreaChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#444" />
                   <XAxis 
                     dataKey="date" 
-                    tickFormatter={(value) => dayjs(value).format('MMM DD')}
+                    stroke="#888"
+                    fontSize={12}
                   />
                   <YAxis 
+                    stroke="#888"
+                    fontSize={12}
                     tickFormatter={(value) => formatCurrency(value, summary.fiatCurrency)}
                   />
-                  <Tooltip 
-                    labelFormatter={(value) => dayjs(value).format('MMM DD, YYYY')}
-                    formatter={(value, name) => [
-                      formatCurrency(value, summary.fiatCurrency),
-                      name === 'cumulativeProfit' ? 'Cumulative Profit' : 'Daily Profit'
-                    ]}
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: '#1a1a1a',
+                      border: '1px solid #333',
+                      borderRadius: '8px',
+                      color: '#fff'
+                    }}
+                    formatter={(value) => [formatCurrency(value, summary.fiatCurrency), 'Profit']}
                   />
                   <Area
                     type="monotone"
                     dataKey="cumulativeProfit"
-                    stroke="#8884d8"
-                    fill="#8884d8"
+                    stroke="#007bff"
+                    fill="#007bff"
                     fillOpacity={0.3}
-                    name="Cumulative Profit"
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="dailyProfit"
-                    stroke="#82ca9d"
-                    strokeWidth={2}
-                    name="Daily Profit"
                   />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
           </div>
         </>
-      )}
-
-      {!summary && !loading && (
-        <div className="no-data">
-          <p>No data available. Please import trades or sync with MEXC to get started.</p>
-        </div>
       )}
     </div>
   );

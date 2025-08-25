@@ -1,328 +1,401 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
-import { useTable, useFilters, useSortBy, usePagination } from 'react-table';
-import dayjs from 'dayjs';
+import { API_CONFIG, CURRENCIES, CRYPTO_CURRENCIES } from '../config';
+import TradeForm from '../components/TradeForm';
 import './Trades.css';
 
 const Trades = () => {
-  const { trades, loading, error, fetchTrades } = useApp();
+  const { settings } = useApp();
+  const [trades, setTrades] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [showForm, setShowForm] = useState(false);
   const [filters, setFilters] = useState({
-    side: '',
+    type: '',
+    fiatCurrency: settings.fiatCurrency || 'INR',
+    cryptoCurrency: 'USDT',
     status: '',
-    fiatCurrency: '',
-    asset: ''
+    fromDate: '',
+    toDate: ''
+  });
+  const [pagination, setPagination] = useState({
+    page: 1,
+    limit: 50,
+    total: 0,
+    pages: 0
   });
 
+  // Fetch trades with filters and pagination
+  const fetchTrades = useCallback(async (page = 1) => {
+    setLoading(true);
+    setError('');
+
+    try {
+      const queryParams = new URLSearchParams({
+        page: page.toString(),
+        limit: pagination.limit.toString(),
+        ...(filters.type && { type: filters.type }),
+        ...(filters.fiatCurrency && { fiatCurrency: filters.fiatCurrency }),
+        ...(filters.cryptoCurrency && { cryptoCurrency: filters.cryptoCurrency }),
+        ...(filters.status && { status: filters.status }),
+        ...(filters.fromDate && { fromDate: filters.fromDate }),
+        ...(filters.toDate && { toDate: filters.toDate })
+      });
+
+      const response = await fetch(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.TRADES}?${queryParams}`);
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.message || 'Failed to fetch trades');
+      }
+
+      setTrades(result.data);
+      setPagination(prev => ({
+        ...prev,
+        page: result.pagination.page,
+        total: result.pagination.total,
+        pages: result.pagination.pages
+      }));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [filters, pagination.limit]);
+
+  // Load trades on component mount and when filters change
   useEffect(() => {
-    fetchTrades();
+    fetchTrades(1);
+  }, [fetchTrades]);
+
+  // Handle trade added
+  const handleTradeAdded = useCallback((newTrade) => {
+    setTrades(prev => [newTrade, ...prev]);
+    setShowForm(false);
+    // Refresh the list to get updated pagination
+    fetchTrades(1);
+  }, [fetchTrades]);
+
+  // Handle trade deletion
+  const handleDeleteTrade = useCallback(async (tradeId) => {
+    if (!window.confirm('Are you sure you want to delete this trade?')) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.TRADES}/${tradeId}`, {
+        method: 'DELETE'
+      });
+
+      if (!response.ok) {
+        const result = await response.json();
+        throw new Error(result.message || 'Failed to delete trade');
+      }
+
+      // Remove trade from state
+      setTrades(prev => prev.filter(trade => trade._id !== tradeId));
+      
+      // Refresh the list to get updated pagination
+      fetchTrades(pagination.page);
+    } catch (err) {
+      setError(err.message);
+    }
+  }, [pagination.page, fetchTrades]);
+
+  // Handle filter changes
+  const handleFilterChange = useCallback((e) => {
+    const { name, value } = e.target;
+    setFilters(prev => ({
+      ...prev,
+      [name]: value
+    }));
+    setPagination(prev => ({ ...prev, page: 1 })); // Reset to first page
   }, []);
 
-  const handleFilterChange = (field, value) => {
-    setFilters(prev => ({ ...prev, [field]: value }));
-  };
+  // Handle pagination
+  const handlePageChange = useCallback((newPage) => {
+    setPagination(prev => ({ ...prev, page: newPage }));
+    fetchTrades(newPage);
+  }, [fetchTrades]);
 
-  const applyFilters = () => {
-    const activeFilters = {};
-    Object.keys(filters).forEach(key => {
-      if (filters[key]) {
-        activeFilters[key] = filters[key];
-      }
-    });
-    fetchTrades(activeFilters);
-  };
-
-  const clearFilters = () => {
-    setFilters({
-      side: '',
-      status: '',
-      fiatCurrency: '',
-      asset: ''
-    });
-    fetchTrades();
-  };
-
-  const formatCurrency = (amount, currency = 'INR') => {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: currency,
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 2
-    }).format(amount);
-  };
-
-  const formatNumber = (num) => {
-    return new Intl.NumberFormat('en-IN', {
+  // Format currency
+  const formatCurrency = useCallback((amount, currency = 'INR') => {
+    const symbol = CURRENCIES[currency]?.symbol || currency;
+    return `${symbol}${parseFloat(amount).toLocaleString('en-IN', {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2
-    }).format(num);
-  };
+    })}`;
+  }, []);
 
-  const formatDate = (date) => {
-    return dayjs(date).format('MMM DD, YYYY HH:mm');
-  };
+  // Format crypto amount
+  const formatCrypto = useCallback((amount, currency = 'USDT') => {
+    return `${parseFloat(amount).toLocaleString('en-IN', {
+      minimumFractionDigits: 6,
+      maximumFractionDigits: 6
+    })} ${currency}`;
+  }, []);
 
-  const columns = [
-    {
-      Header: 'Date',
-      accessor: 'completedAt',
-      Cell: ({ value }) => formatDate(value),
-      sortType: 'datetime'
-    },
-    {
-      Header: 'Side',
-      accessor: 'side',
-      Cell: ({ value }) => (
-        <span className={`side-badge ${value.toLowerCase()}`}>
-          {value}
-        </span>
-      )
-    },
-    {
-      Header: 'Amount',
-      accessor: 'amount',
-      Cell: ({ value }) => formatNumber(value)
-    },
-    {
-      Header: 'Price',
-      accessor: 'price',
-      Cell: ({ value, row }) => formatCurrency(value, row.original.fiatCurrency)
-    },
-    {
-      Header: 'Total',
-      accessor: 'totalFiat',
-      Cell: ({ value, row }) => formatCurrency(value, row.original.fiatCurrency)
-    },
-    {
-      Header: 'Asset',
-      accessor: 'asset'
-    },
-    {
-      Header: 'Fiat',
-      accessor: 'fiatCurrency'
-    },
-    {
-      Header: 'Counterparty',
-      accessor: 'counterparty',
-      Cell: ({ value }) => value || '-'
-    },
-    {
-      Header: 'Status',
-      accessor: 'status',
-      Cell: ({ value }) => (
-        <span className={`status-badge ${value.toLowerCase()}`}>
-          {value}
-        </span>
-      )
-    }
-  ];
+  // Format timestamp
+  const formatTimestamp = useCallback((timestamp) => {
+    return new Date(timestamp).toLocaleString('en-IN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    });
+  }, []);
 
-  const {
-    getTableProps,
-    getTableBodyProps,
-    headerGroups,
-    rows,
-    prepareRow,
-    state: { pageIndex, pageSize },
-    nextPage,
-    previousPage,
-    canNextPage,
-    canPreviousPage,
-    pageOptions,
-    gotoPage,
-    pageCount,
-    setPageSize
-  } = useTable(
-    {
-      columns,
-      data: trades,
-      initialState: { pageIndex: 0, pageSize: 20 }
-    },
-    useFilters,
-    useSortBy,
-    usePagination
-  );
+  // Calculate total values
+  const totals = useMemo(() => {
+    return trades.reduce((acc, trade) => {
+      if (trade.type === 'BUY') {
+        acc.totalBuyFiat += trade.fiatAmount;
+        acc.totalBuyCrypto += trade.cryptoAmount;
+      } else {
+        acc.totalSellFiat += trade.fiatAmount;
+        acc.totalSellCrypto += trade.cryptoAmount;
+      }
+      return acc;
+    }, {
+      totalBuyFiat: 0,
+      totalSellFiat: 0,
+      totalBuyCrypto: 0,
+      totalSellCrypto: 0
+    });
+  }, [trades]);
 
   if (loading && trades.length === 0) {
     return (
-      <div className="trades">
+      <div className="trades-page">
         <div className="loading">Loading trades...</div>
       </div>
     );
   }
 
   return (
-    <div className="trades">
+    <div className="trades-page">
       <div className="trades-header">
-        <h1>Trades</h1>
-        <div className="trades-actions">
-          <button 
-            className="btn btn-secondary"
-            onClick={clearFilters}
-          >
-            Clear Filters
-          </button>
-          <button 
-            className="btn btn-primary"
-            onClick={applyFilters}
-          >
-            Apply Filters
-          </button>
+        <div className="header-content">
+          <h1>Trade History</h1>
+          <p>Manage and track your P2P trades</p>
         </div>
+        <button
+          className="btn btn-primary add-trade-btn"
+          onClick={() => setShowForm(true)}
+        >
+          + Add Trade
+        </button>
       </div>
-
-      {error && (
-        <div className="error-message">
-          {error}
-        </div>
-      )}
 
       {/* Filters */}
       <div className="filters-section">
         <div className="filters-grid">
           <div className="filter-group">
-            <label>Side:</label>
+            <label>Type</label>
             <select
-              value={filters.side}
-              onChange={(e) => handleFilterChange('side', e.target.value)}
+              name="type"
+              value={filters.type}
+              onChange={handleFilterChange}
+              className="filter-control"
             >
-              <option value="">All</option>
+              <option value="">All Types</option>
               <option value="BUY">Buy</option>
               <option value="SELL">Sell</option>
             </select>
           </div>
 
           <div className="filter-group">
-            <label>Status:</label>
+            <label>Fiat Currency</label>
             <select
-              value={filters.status}
-              onChange={(e) => handleFilterChange('status', e.target.value)}
+              name="fiatCurrency"
+              value={filters.fiatCurrency}
+              onChange={handleFilterChange}
+              className="filter-control"
             >
-              <option value="">All</option>
+              {Object.entries(CURRENCIES).map(([code, currency]) => (
+                <option key={code} value={code}>
+                  {code} - {currency.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="filter-group">
+            <label>Crypto Currency</label>
+            <select
+              name="cryptoCurrency"
+              value={filters.cryptoCurrency}
+              onChange={handleFilterChange}
+              className="filter-control"
+            >
+              {Object.entries(CRYPTO_CURRENCIES).map(([code, crypto]) => (
+                <option key={code} value={code}>
+                  {code} - {crypto.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="filter-group">
+            <label>Status</label>
+            <select
+              name="status"
+              value={filters.status}
+              onChange={handleFilterChange}
+              className="filter-control"
+            >
+              <option value="">All Statuses</option>
               <option value="COMPLETED">Completed</option>
               <option value="PENDING">Pending</option>
-              <option value="CANCELED">Canceled</option>
-              <option value="FAILED">Failed</option>
+              <option value="CANCELLED">Cancelled</option>
             </select>
           </div>
 
           <div className="filter-group">
-            <label>Fiat Currency:</label>
-            <select
-              value={filters.fiatCurrency}
-              onChange={(e) => handleFilterChange('fiatCurrency', e.target.value)}
-            >
-              <option value="">All</option>
-              <option value="INR">INR</option>
-              <option value="USD">USD</option>
-              <option value="EUR">EUR</option>
-            </select>
+            <label>From Date</label>
+            <input
+              type="date"
+              name="fromDate"
+              value={filters.fromDate}
+              onChange={handleFilterChange}
+              className="filter-control"
+            />
           </div>
 
           <div className="filter-group">
-            <label>Asset:</label>
-            <select
-              value={filters.asset}
-              onChange={(e) => handleFilterChange('asset', e.target.value)}
-            >
-              <option value="">All</option>
-              <option value="USDT">USDT</option>
-              <option value="BTC">BTC</option>
-              <option value="ETH">ETH</option>
-            </select>
+            <label>To Date</label>
+            <input
+              type="date"
+              name="toDate"
+              value={filters.toDate}
+              onChange={handleFilterChange}
+              className="filter-control"
+            />
           </div>
         </div>
       </div>
 
-      {/* Trades Table */}
-      <div className="table-container">
-        <table {...getTableProps()} className="trades-table">
-          <thead>
-            {headerGroups.map(headerGroup => (
-              <tr {...headerGroup.getHeaderGroupProps()}>
-                {headerGroup.headers.map(column => (
-                  <th {...column.getHeaderProps(column.getSortByToggleProps())}>
-                    {column.render('Header')}
-                    <span className="sort-indicator">
-                      {column.isSorted ? (column.isSortedDesc ? ' ↓' : ' ↑') : ''}
-                    </span>
-                  </th>
-                ))}
-              </tr>
-            ))}
-          </thead>
-          <tbody {...getTableBodyProps()}>
-            {rows.map(row => {
-              prepareRow(row);
-              return (
-                <tr {...row.getRowProps()}>
-                  {row.cells.map(cell => (
-                    <td {...cell.getCellProps()}>
-                      {cell.render('Cell')}
-                    </td>
-                  ))}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-
-        {rows.length === 0 && (
-          <div className="no-trades">
-            <p>No trades found matching the current filters.</p>
+      {/* Summary Cards */}
+      <div className="summary-cards">
+        <div className="summary-card">
+          <h3>Total Buy</h3>
+          <div className="card-value">
+            <div className="fiat-amount">{formatCurrency(totals.totalBuyFiat, filters.fiatCurrency)}</div>
+            <div className="crypto-amount">{formatCrypto(totals.totalBuyCrypto, filters.cryptoCurrency)}</div>
           </div>
+        </div>
+
+        <div className="summary-card">
+          <h3>Total Sell</h3>
+          <div className="card-value">
+            <div className="fiat-amount">{formatCurrency(totals.totalSellFiat, filters.fiatCurrency)}</div>
+            <div className="crypto-amount">{formatCrypto(totals.totalSellCrypto, filters.cryptoCurrency)}</div>
+          </div>
+        </div>
+
+        <div className="summary-card">
+          <h3>Total Trades</h3>
+          <div className="card-value">
+            <div className="trade-count">{trades.length}</div>
+            <div className="trade-label">trades</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Error Message */}
+      {error && (
+        <div className="error-message">
+          {error}
+        </div>
+      )}
+
+      {/* Trades Table */}
+      <div className="trades-table-container">
+        {trades.length === 0 ? (
+          <div className="no-trades">
+            <p>No trades found. Add your first trade to get started!</p>
+          </div>
+        ) : (
+          <table className="trades-table">
+            <thead>
+              <tr>
+                <th>Type</th>
+                <th>Date & Time</th>
+                <th>Fiat Amount</th>
+                <th>Price</th>
+                <th>Crypto Amount</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {trades.map((trade) => (
+                <tr key={trade._id} className={`trade-row trade-${trade.type.toLowerCase()}`}>
+                  <td>
+                    <span className={`trade-type ${trade.type.toLowerCase()}`}>
+                      {trade.type}
+                    </span>
+                  </td>
+                  <td>{formatTimestamp(trade.timestamp)}</td>
+                  <td>{formatCurrency(trade.fiatAmount, trade.fiatCurrency)}</td>
+                  <td>{formatCurrency(trade.price, trade.fiatCurrency)}</td>
+                  <td>{formatCrypto(trade.cryptoAmount, trade.cryptoCurrency)}</td>
+                  <td>
+                    <span className={`status-badge status-${trade.status.toLowerCase()}`}>
+                      {trade.status}
+                    </span>
+                  </td>
+                  <td>
+                    <button
+                      className="btn btn-danger btn-sm"
+                      onClick={() => handleDeleteTrade(trade._id)}
+                      title="Delete trade"
+                    >
+                      🗑️
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
       </div>
 
       {/* Pagination */}
-      {trades.length > 0 && (
+      {pagination.pages > 1 && (
         <div className="pagination">
-          <div className="pagination-info">
-            Page {pageIndex + 1} of {pageCount} ({trades.length} total trades)
-          </div>
+          <button
+            className="btn btn-secondary"
+            onClick={() => handlePageChange(pagination.page - 1)}
+            disabled={pagination.page === 1}
+          >
+            Previous
+          </button>
           
-          <div className="pagination-controls">
-            <button
-              onClick={() => gotoPage(0)}
-              disabled={!canPreviousPage}
-              className="btn btn-secondary"
-            >
-              {'<<'}
-            </button>
-            <button
-              onClick={() => previousPage()}
-              disabled={!canPreviousPage}
-              className="btn btn-secondary"
-            >
-              {'<'}
-            </button>
-            <button
-              onClick={() => nextPage()}
-              disabled={!canNextPage}
-              className="btn btn-secondary"
-            >
-              {'>'}
-            </button>
-            <button
-              onClick={() => gotoPage(pageCount - 1)}
-              disabled={!canNextPage}
-              className="btn btn-secondary"
-            >
-              {'>>'}
-            </button>
-          </div>
+          <span className="page-info">
+            Page {pagination.page} of {pagination.pages}
+          </span>
+          
+          <button
+            className="btn btn-secondary"
+            onClick={() => handlePageChange(pagination.page + 1)}
+            disabled={pagination.page === pagination.pages}
+          >
+            Next
+          </button>
+        </div>
+      )}
 
-          <div className="page-size-selector">
-            <label>Show:</label>
-            <select
-              value={pageSize}
-              onChange={e => setPageSize(Number(e.target.value))}
-            >
-              {[10, 20, 50, 100].map(pageSize => (
-                <option key={pageSize} value={pageSize}>
-                  {pageSize}
-                </option>
-              ))}
-            </select>
+      {/* Trade Form Modal */}
+      {showForm && (
+        <div className="modal-overlay" onClick={() => setShowForm(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <TradeForm
+              onTradeAdded={handleTradeAdded}
+              onCancel={() => setShowForm(false)}
+            />
           </div>
         </div>
       )}

@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useApp } from '../context/AppContext';
 import axios from 'axios';
 import './Settings.css';
 
 const Settings = () => {
-  const { settings, updateSettings, mexcStatus, checkMEXCStatus } = useApp();
+  const { settings, updateSettings } = useApp();
   const [localSettings, setLocalSettings] = useState(settings);
   const [availableMethods, setAvailableMethods] = useState([]);
   const [availableCurrencies, setAvailableCurrencies] = useState([]);
@@ -12,15 +12,7 @@ const Settings = () => {
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
 
-  useEffect(() => {
-    loadAvailableOptions();
-  }, []);
-
-  useEffect(() => {
-    setLocalSettings(settings);
-  }, [settings]);
-
-  const loadAvailableOptions = async () => {
+  const loadAvailableOptions = useCallback(async () => {
     try {
       const [methodsResponse, currenciesResponse] = await Promise.all([
         axios.get('/api/summary/methods'),
@@ -37,16 +29,28 @@ const Settings = () => {
     } catch (error) {
       console.error('Failed to load available options:', error);
     }
-  };
+  }, []);
 
-  const handleSettingChange = (field, value) => {
+  // Load available options on mount
+  useEffect(() => {
+    loadAvailableOptions();
+  }, [loadAvailableOptions]);
+
+  // Update local settings when global settings change (but only if they're different)
+  useEffect(() => {
+    if (JSON.stringify(settings) !== JSON.stringify(localSettings)) {
+      setLocalSettings(settings);
+    }
+  }, [settings, localSettings]);
+
+  const handleSettingChange = useCallback((field, value) => {
     setLocalSettings(prev => ({
       ...prev,
       [field]: value
     }));
-  };
+  }, []);
 
-  const handleSaveSettings = async () => {
+  const handleSaveSettings = useCallback(async () => {
     setLoading(true);
     setError(null);
     setSuccess(null);
@@ -62,33 +66,13 @@ const Settings = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [localSettings, updateSettings]);
 
-  const handleResetSettings = () => {
+  const handleResetSettings = useCallback(() => {
     setLocalSettings(settings);
     setError(null);
     setSuccess(null);
-  };
-
-  const testMEXCConnection = async () => {
-    setLoading(true);
-    setError(null);
-    setSuccess(null);
-
-    try {
-      const response = await axios.get('/api/mexc/test');
-      if (response.data.success) {
-        setSuccess('MEXC API connection successful!');
-        await checkMEXCStatus(); // Refresh status
-      } else {
-        setError('MEXC API connection failed: ' + response.data.message);
-      }
-    } catch (error) {
-      setError('MEXC API connection failed: ' + (error.response?.data?.message || error.message));
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [settings]);
 
   const hasChanges = JSON.stringify(localSettings) !== JSON.stringify(settings);
 
@@ -152,50 +136,6 @@ const Settings = () => {
                 </option>
               ))}
             </select>
-          </div>
-        </div>
-
-        {/* MEXC API Status */}
-        <div className="settings-section">
-          <h3>MEXC API Integration</h3>
-          <p>Configure and test your MEXC API connection for automatic trade syncing.</p>
-          
-          <div className="mexc-status">
-            <div className="status-info">
-              <div className="status-item">
-                <span className="status-label">API Credentials:</span>
-                <span className={`status-value ${mexcStatus.hasCredentials ? 'connected' : 'disconnected'}`}>
-                  {mexcStatus.hasCredentials ? 'Configured' : 'Not Configured'}
-                </span>
-              </div>
-              <div className="status-item">
-                <span className="status-label">Connection:</span>
-                <span className={`status-value ${mexcStatus.connected ? 'connected' : 'disconnected'}`}>
-                  {mexcStatus.connected ? 'Connected' : 'Disconnected'}
-                </span>
-              </div>
-            </div>
-            
-            <div className="mexc-actions">
-              <button 
-                className="btn btn-secondary"
-                onClick={testMEXCConnection}
-                disabled={loading || !mexcStatus.hasCredentials}
-              >
-                {loading ? 'Testing...' : 'Test Connection'}
-              </button>
-            </div>
-          </div>
-
-          <div className="mexc-help">
-            <h4>How to configure MEXC API:</h4>
-            <ol>
-              <li>Log in to your MEXC account</li>
-              <li>Go to API Management</li>
-              <li>Create a new API key with trading permissions</li>
-              <li>Add the API key and secret to your backend .env file</li>
-              <li>Restart the backend server</li>
-            </ol>
           </div>
         </div>
 

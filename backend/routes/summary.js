@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const profitCalculator = require('../services/profitCalculator');
+const ProfitCalculator = require('../services/profitCalculator');
 
 // Get profit summary
 router.get('/', async (req, res) => {
@@ -12,7 +12,8 @@ router.get('/', async (req, res) => {
       to 
     } = req.query;
 
-    // Set profit calculation method
+    // Create profit calculator instance
+    const profitCalculator = new ProfitCalculator();
     profitCalculator.setMethod(method.toUpperCase());
 
     // Calculate realized profit
@@ -52,7 +53,8 @@ router.get('/range', async (req, res) => {
       });
     }
 
-    // Set profit calculation method
+    // Create profit calculator instance
+    const profitCalculator = new ProfitCalculator();
     profitCalculator.setMethod(method.toUpperCase());
 
     // Calculate realized profit for date range
@@ -88,7 +90,8 @@ router.get('/monthly', async (req, res) => {
     const from = `${currentYear}-01-01`;
     const to = `${currentYear}-12-31`;
 
-    // Set profit calculation method
+    // Create profit calculator instance
+    const profitCalculator = new ProfitCalculator();
     profitCalculator.setMethod(method.toUpperCase());
 
     // Calculate realized profit for the year
@@ -105,7 +108,10 @@ router.get('/monthly', async (req, res) => {
       const monthTo = new Date(currentYear, month, 0).toISOString().split('T')[0];
       
       try {
-        const monthSummary = await profitCalculator.calculateRealizedProfit(
+        const monthProfitCalculator = new ProfitCalculator();
+        monthProfitCalculator.setMethod(method.toUpperCase());
+        
+        const monthSummary = await monthProfitCalculator.calculateRealizedProfit(
           fiatCurrency,
           monthFrom,
           monthTo

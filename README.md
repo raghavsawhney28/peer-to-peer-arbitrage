@@ -1,14 +1,12 @@
 # P2P Arbitrage Tracker
 
-A production-ready application for tracking MEXC P2P trades and calculating realized profits using FIFO and Average Cost methods.
+A production-ready application for tracking P2P trades and calculating realized profits using FIFO and Average Cost methods.
 
 ## Features
 
 - **Dashboard**: KPI cards showing profit, total buys/sells, and remaining inventory
 - **Profit Charts**: Visual representation of profit over time
-- **Trade Management**: View, filter, and manage all trades
-- **CSV Import**: Import trade data from CSV files with column mapping
-- **MEXC Integration**: Sync trades directly from MEXC API
+- **Trade Management**: View, filter, and manage all trades manually
 - **Multiple P&L Methods**: Support for FIFO and Average Cost calculations
 - **Responsive Design**: Works on desktop and mobile devices
 
@@ -24,7 +22,6 @@ A production-ready application for tracking MEXC P2P trades and calculating real
 
 - Node.js 16+ and npm
 - MongoDB (local or Atlas)
-- MEXC API credentials (optional)
 
 ## Installation
 
@@ -43,10 +40,6 @@ A production-ready application for tracking MEXC P2P trades and calculating real
    
    Create a `.env` file in the `backend` directory:
    ```env
-   # MEXC API Configuration
-   MEXC_API_KEY=your_mexc_api_key_here
-   MEXC_API_SECRET=your_mexc_api_secret_here
-   
    # MongoDB Configuration
    MONGODB_URI=mongodb://localhost:27017/p2p_arbitrage
    # For MongoDB Atlas: mongodb+srv://username:password@cluster.mongodb.net/p2p_arbitrage
@@ -103,174 +96,111 @@ A production-ready application for tracking MEXC P2P trades and calculating real
 
 ## Usage
 
-### 1. Dashboard
-- View key performance indicators
-- Set date ranges for analysis
-- Sync with MEXC API
-- View profit charts over time
+### Adding Trades
 
-### 2. Import Trades
-- Upload CSV files with trade data
-- Map CSV columns to system fields
-- Preview data before import
-- Download sample CSV template
+1. Navigate to the **Trades** page
+2. Click **Add New Trade** button
+3. Fill in the trade details:
+   - **Type**: Buy or Sell
+   - **Amount**: USDT amount
+   - **Price**: Price in your local currency
+   - **Date**: Trade completion date
+   - **Notes**: Optional additional information
+4. Click **Save Trade**
 
-### 3. View Trades
-- Browse all trades with pagination
-- Filter by side, status, currency, etc.
-- Sort by various fields
-- View trade details
+### Viewing Dashboard
 
-### 4. Settings
-- Choose P&L calculation method (FIFO/Average)
-- Set default fiat currency
-- Configure MEXC API integration
-- Test API connections
+1. The **Dashboard** shows key metrics:
+   - Realized profit/loss
+   - Total buys and sells
+   - Remaining inventory
+   - Average buy/sell prices
+2. Use date range filters to view specific periods
+3. Charts show profit trends over time
 
-## CSV Import Format
+### Settings
 
-The application expects CSV files with the following columns:
+1. **P&L Method**: Choose between FIFO or Average Cost
+2. **Default Currency**: Set your preferred fiat currency
+3. Settings are automatically saved to localStorage
 
-| Field | Required | Description |
-|-------|----------|-------------|
-| orderId | Yes | Unique trade identifier |
-| side | Yes | BUY or SELL |
-| price | Yes | Price per USDT in fiat |
-| amount | Yes | Amount of USDT traded |
-| totalFiat | Yes | Total fiat value |
-| asset | No | Trading asset (default: USDT) |
-| fiatCurrency | No | Fiat currency (default: INR) |
-| feeFiat | No | Fee amount in fiat |
-| paymentMethod | No | Payment method used |
-| counterparty | No | Counterparty identifier |
-| status | No | Trade status (default: COMPLETED) |
-| createdAt | No | Trade creation date |
-| completedAt | No | Trade completion date |
+## API Endpoints
 
-## MEXC API Integration
+### Core Endpoints
+- `GET /api/health` - Server health check
+- `GET /api/summary` - Get P&L summary
+- `GET /api/trades` - Get all trades
+- `POST /api/trades` - Create new trade
+- `PUT /api/trades/:id` - Update trade
+- `DELETE /api/trades/:id` - Delete trade
+- `GET /api/pnl` - Get P&L calculations
 
-### Setup
-1. Log in to your MEXC account
-2. Go to API Management
-3. Create a new API key with trading permissions
-4. Add the API key and secret to your `.env` file
-5. Restart the backend server
+### Query Parameters
+- `from` - Start date (YYYY-MM-DD)
+- `to` - End date (YYYY-MM-DD)
+- `fiatCurrency` - Currency for calculations
+- `method` - P&L calculation method (FIFO/Average)
 
-### Features
-- Automatic trade syncing
-- Real-time connection status
-- Fallback to CSV import if API unavailable
+## Database Schema
+
+### Trade Model
+```javascript
+{
+  type: 'buy' | 'sell',
+  amount: Number,        // USDT amount
+  price: Number,         // Price in fiat currency
+  fiatCurrency: String,  // Currency code (e.g., 'INR')
+  completedAt: Date,     // Trade completion date
+  notes: String,         // Optional notes
+  createdAt: Date,       // Record creation date
+  updatedAt: Date        // Last update date
+}
+```
 
 ## P&L Calculation Methods
 
 ### FIFO (First In, First Out)
-- Matches sells to the oldest buys first
+- Sells are matched with the oldest buys first
 - More accurate for tax purposes
-- Better for tracking specific lots
+- Better for long-term holdings
 
 ### Average Cost
-- Uses weighted average cost of holdings
+- Calculates average buy price across all purchases
 - Simpler calculations
-- Good for portfolio management
-
-## API Endpoints
-
-### Health Check
-- `GET /api/health` - Server status
-
-### MEXC Integration
-- `GET /api/mexc/status` - API connection status
-- `GET /api/mexc/test` - Test API connection
-- `POST /api/mexc/sync` - Sync trades from MEXC
-
-### CSV Import
-- `GET /api/import/sample` - Download sample CSV
-- `GET /api/import/fields` - Get available fields
-- `POST /api/import/preview` - Preview CSV data
-- `POST /api/import/import` - Import CSV data
-
-### Trades
-- `GET /api/trades` - List trades with filters
-- `POST /api/trades` - Create new trade
-- `PUT /api/trades/:id` - Update trade
-- `DELETE /api/trades/:id` - Delete trade
-
-### Summary & P&L
-- `GET /api/summary` - Profit summary
-- `GET /api/summary/range` - Date range summary
-- `GET /api/summary/monthly` - Monthly breakdown
-- `GET /api/pnl/timeseries` - Profit time series
-
-## Testing
-
-Run the test suite:
-```bash
-cd backend
-npm test
-```
-
-## Deployment
-
-### Backend (Render)
-1. Connect your GitHub repository
-2. Set environment variables
-3. Deploy with Node.js runtime
-
-### Frontend (Render)
-1. Connect your GitHub repository
-2. Set build command: `npm run build`
-3. Set publish directory: `build`
-4. Deploy with static site runtime
-
-### Database (MongoDB Atlas)
-1. Create a free cluster
-2. Get connection string
-3. Add to backend environment variables
-
-## Security Features
-
-- API key encryption
-- Rate limiting
-- CORS protection
-- Input validation
-- SQL injection prevention
-- XSS protection
-
-## Performance Optimizations
-
-- Database indexing
-- Response compression
-- Efficient queries
-- Lazy loading
-- Responsive images
+- Good for regular trading
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. **MongoDB Connection Failed**
-   - Check if MongoDB is running
-   - Verify connection string in `.env`
-   - Check network connectivity
+1. **Database Connection Error**
+   - Ensure MongoDB is running
+   - Check MONGODB_URI in .env file
+   - Verify network connectivity
 
-2. **MEXC API Errors**
-   - Verify API credentials
-   - Check API permissions
-   - Ensure account has trading access
+2. **Port Already in Use**
+   - Change PORT in .env file
+   - Kill existing processes on the port
 
-3. **CSV Import Issues**
-   - Verify CSV format
-   - Check required columns
-   - Ensure proper data types
-
-4. **Frontend Not Loading**
-   - Check if backend is running
-   - Verify proxy configuration
+3. **CORS Issues**
+   - Verify FRONTEND_URL in .env
    - Check browser console for errors
 
-### Logs
+### Development Tips
 
-Backend logs are available in the console. For production, consider using a logging service like Winston or Bunyan.
+1. **Skip Database in Development**
+   ```env
+   SKIP_DB=true
+   ```
+
+2. **Enable Debug Logging**
+   ```env
+   NODE_ENV=development
+   ```
+
+3. **View API Logs**
+   - Check backend console for request/response logs
+   - Frontend logs in browser console
 
 ## Contributing
 
@@ -283,21 +213,3 @@ Backend logs are available in the console. For production, consider using a logg
 ## License
 
 MIT License - see LICENSE file for details
-
-## Support
-
-For issues and questions:
-1. Check the troubleshooting section
-2. Review existing GitHub issues
-3. Create a new issue with detailed information
-
-## Roadmap
-
-- [ ] Real-time notifications
-- [ ] Advanced analytics
-- [ ] Tax reporting
-- [ ] Multi-exchange support
-- [ ] Mobile app
-- [ ] API rate limiting
-- [ ] User authentication
-- [ ] Multi-user support

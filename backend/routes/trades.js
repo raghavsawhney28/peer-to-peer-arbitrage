@@ -7,78 +7,73 @@ router.get('/', async (req, res) => {
   try {
     const {
       page = 1,
-      pageSize = 50,
-      side,
-      status,
+      limit = 50,
+      type,
       fiatCurrency,
-      asset,
-      from,
-      to,
-      sortBy = 'completedAt',
+      cryptoCurrency,
+      status,
+      fromDate,
+      toDate,
+      sortBy = 'timestamp',
       sortOrder = 'desc'
     } = req.query;
 
     // Build query
     const query = {};
-    
-    if (side) query.side = side.toUpperCase();
+    if (type) query.type = type.toUpperCase();
+    if (fiatCurrency) query.fiatCurrency = fiatCurrency;
+    if (cryptoCurrency) query.cryptoCurrency = cryptoCurrency;
     if (status) query.status = status.toUpperCase();
-    if (fiatCurrency) query.fiatCurrency = fiatCurrency.toUpperCase();
-    if (asset) query.asset = asset.toUpperCase();
     
-    if (from || to) {
-      query.completedAt = {};
-      if (from) query.completedAt.$gte = new Date(from);
-      if (to) query.completedAt.$lte = new Date(to);
+    if (fromDate || toDate) {
+      query.timestamp = {};
+      if (fromDate) query.timestamp.$gte = new Date(fromDate);
+      if (toDate) query.timestamp.$lte = new Date(toDate);
     }
 
     // Build sort object
     const sort = {};
-    sort[sortBy] = sortOrder === 'asc' ? 1 : -1;
+    sort[sortBy] = sortOrder === 'desc' ? -1 : 1;
 
     // Execute query with pagination
-    const skip = (parseInt(page) - 1) * parseInt(pageSize);
-    const limit = parseInt(pageSize);
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const trades = await Trade.find(query)
+      .sort(sort)
+      .skip(skip)
+      .limit(parseInt(limit))
+      .lean();
 
-    const [trades, total] = await Promise.all([
-      Trade.find(query)
-        .sort(sort)
-        .skip(skip)
-        .limit(limit)
-        .lean(),
-      Trade.countDocuments(query)
-    ]);
-
-    const totalPages = Math.ceil(total / limit);
+    // Get total count for pagination
+    const total = await Trade.countDocuments(query);
 
     res.json({
       success: true,
       data: trades,
       pagination: {
         page: parseInt(page),
-        pageSize: limit,
+        limit: parseInt(limit),
         total,
-        totalPages
+        pages: Math.ceil(total / parseInt(limit))
       }
     });
   } catch (error) {
-    console.error('Trades query error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: error.message 
+    console.error('Error fetching trades:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
     });
   }
 });
 
-// Get trade by ID
+// Get single trade by ID
 router.get('/:id', async (req, res) => {
   try {
     const trade = await Trade.findById(req.params.id);
     
     if (!trade) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Trade not found' 
+      return res.status(404).json({
+        success: false,
+        message: 'Trade not found'
       });
     }
 
@@ -87,9 +82,10 @@ router.get('/:id', async (req, res) => {
       data: trade
     });
   } catch (error) {
-    res.status(500).json({ 
-      success: false, 
-      message: error.message 
+    console.error('Error fetching trade:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
     });
   }
 });
@@ -97,49 +93,59 @@ router.get('/:id', async (req, res) => {
 // Create new trade
 router.post('/', async (req, res) => {
   try {
-    const tradeData = req.body;
-    
-    // Validate required fields
-    const requiredFields = ['orderId', 'side', 'price', 'amount', 'totalFiat'];
-    for (const field of requiredFields) {
-      if (!tradeData[field]) {
-        return res.status(400).json({ 
-          success: false, 
-          message: `Missing required field: ${field}` 
-        });
-      }
-    }
+    const {
+      type,
+      timestamp,
+      fiatCurrency = 'INR',
+      fiatAmount,
+      price,
+      cryptoAmount,
+      cryptoCurrency = 'USDT',
+      notes = '',
+      status = 'COMPLETED'
+    } = req.body;
 
-    // Check if trade with same orderId already exists
-    const existingTrade = await Trade.findOne({ orderId: tradeData.orderId });
-    if (existingTrade) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Trade with this order ID already exists' 
+    // Validate required fields
+    if (!type || !fiatAmount || !price || !cryptoAmount) {
+      return res.status(400).json({
+        success: false,
+        message: 'Type, fiat amount, price, and crypto amount are required'
       });
     }
 
-    // Set defaults
-    if (!tradeData.asset) tradeData.asset = 'USDT';
-    if (!tradeData.fiatCurrency) tradeData.fiatCurrency = 'INR';
-    if (!tradeData.status) tradeData.status = 'COMPLETED';
-    if (!tradeData.createdAt) tradeData.createdAt = new Date();
-    if (!tradeData.completedAt) tradeData.completedAt = new Date();
-    if (!tradeData.feeFiat) tradeData.feeFiat = 0;
+    // Validate type
+    if (!['BUY', 'SELL'].includes(type.toUpperCase())) {
+      return res.status(400).json({
+        success: false,
+        message: 'Type must be either BUY or SELL'
+      });
+    }
 
-    const trade = new Trade(tradeData);
+    // Create trade
+    const trade = new Trade({
+      type: type.toUpperCase(),
+      timestamp: timestamp ? new Date(timestamp) : new Date(),
+      fiatCurrency: fiatCurrency.toUpperCase(),
+      fiatAmount: parseFloat(fiatAmount),
+      price: parseFloat(price),
+      cryptoAmount: parseFloat(cryptoAmount),
+      cryptoCurrency: cryptoCurrency.toUpperCase(),
+      notes,
+      status: status.toUpperCase()
+    });
+
     await trade.save();
 
     res.status(201).json({
       success: true,
-      message: 'Trade created successfully',
-      data: trade
+      data: trade,
+      message: 'Trade created successfully'
     });
   } catch (error) {
-    console.error('Create trade error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: error.message 
+    console.error('Error creating trade:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
     });
   }
 });
@@ -147,36 +153,52 @@ router.post('/', async (req, res) => {
 // Update trade
 router.put('/:id', async (req, res) => {
   try {
-    const tradeData = req.body;
-    const tradeId = req.params.id;
+    const {
+      type,
+      timestamp,
+      fiatCurrency,
+      fiatAmount,
+      price,
+      cryptoAmount,
+      cryptoCurrency,
+      notes,
+      status
+    } = req.body;
 
-    const trade = await Trade.findById(tradeId);
+    // Find and update trade
+    const trade = await Trade.findByIdAndUpdate(
+      req.params.id,
+      {
+        ...(type && { type: type.toUpperCase() }),
+        ...(timestamp && { timestamp: new Date(timestamp) }),
+        ...(fiatCurrency && { fiatCurrency: fiatCurrency.toUpperCase() }),
+        ...(fiatAmount && { fiatAmount: parseFloat(fiatAmount) }),
+        ...(price && { price: parseFloat(price) }),
+        ...(cryptoAmount && { cryptoAmount: parseFloat(cryptoAmount) }),
+        ...(cryptoCurrency && { cryptoCurrency: cryptoCurrency.toUpperCase() }),
+        ...(notes !== undefined && { notes }),
+        ...(status && { status: status.toUpperCase() })
+      },
+      { new: true, runValidators: true }
+    );
+
     if (!trade) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Trade not found' 
+      return res.status(404).json({
+        success: false,
+        message: 'Trade not found'
       });
     }
 
-    // Update fields
-    Object.keys(tradeData).forEach(key => {
-      if (key !== '_id' && key !== '__v') {
-        trade[key] = tradeData[key];
-      }
-    });
-
-    await trade.save();
-
     res.json({
       success: true,
-      message: 'Trade updated successfully',
-      data: trade
+      data: trade,
+      message: 'Trade updated successfully'
     });
   } catch (error) {
-    console.error('Update trade error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: error.message 
+    console.error('Error updating trade:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
     });
   }
 });
@@ -187,9 +209,9 @@ router.delete('/:id', async (req, res) => {
     const trade = await Trade.findByIdAndDelete(req.params.id);
     
     if (!trade) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Trade not found' 
+      return res.status(404).json({
+        success: false,
+        message: 'Trade not found'
       });
     }
 
@@ -198,58 +220,38 @@ router.delete('/:id', async (req, res) => {
       message: 'Trade deleted successfully'
     });
   } catch (error) {
-    console.error('Delete trade error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: error.message 
+    console.error('Error deleting trade:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
     });
   }
 });
 
-// Get trade statistics
-router.get('/stats/summary', async (req, res) => {
+// Bulk import trades (for future use)
+router.post('/bulk', async (req, res) => {
   try {
-    const { fiatCurrency = 'INR' } = req.query;
+    const { trades } = req.body;
+    
+    if (!Array.isArray(trades) || trades.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Trades array is required and must not be empty'
+      });
+    }
 
-    const stats = await Trade.aggregate([
-      { $match: { fiatCurrency: fiatCurrency.toUpperCase() } },
-      {
-        $group: {
-          _id: null,
-          totalTrades: { $sum: 1 },
-          totalBuyTrades: { $sum: { $cond: [{ $eq: ['$side', 'BUY'] }, 1, 0] } },
-          totalSellTrades: { $sum: { $cond: [{ $eq: ['$side', 'SELL'] }, 1, 0] } },
-          totalBuyAmount: { $sum: { $cond: [{ $eq: ['$side', 'BUY'] }, '$amount', 0] } },
-          totalSellAmount: { $sum: { $cond: [{ $eq: ['$side', 'SELL'] }, '$amount', 0] } },
-          totalBuyFiat: { $sum: { $cond: [{ $eq: ['$side', 'BUY'] }, '$totalFiat', 0] } },
-          totalSellFiat: { $sum: { $cond: [{ $eq: ['$side', 'SELL'] }, '$totalFiat', 0] } },
-          avgBuyPrice: { $avg: { $cond: [{ $eq: ['$side', 'BUY'] }, '$price', null] } },
-          avgSellPrice: { $avg: { $cond: [{ $eq: ['$eq', '$side', 'SELL'] }, '$price', null] } }
-        }
-      }
-    ]);
+    const createdTrades = await Trade.insertMany(trades);
 
-    const result = stats[0] || {
-      totalTrades: 0,
-      totalBuyTrades: 0,
-      totalSellTrades: 0,
-      totalBuyAmount: 0,
-      totalSellAmount: 0,
-      totalBuyFiat: 0,
-      totalSellFiat: 0,
-      avgBuyPrice: 0,
-      avgSellPrice: 0
-    };
-
-    res.json({
+    res.status(201).json({
       success: true,
-      data: result
+      data: createdTrades,
+      message: `${createdTrades.length} trades imported successfully`
     });
   } catch (error) {
-    console.error('Trade stats error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: error.message 
+    console.error('Error bulk importing trades:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
     });
   }
 });
